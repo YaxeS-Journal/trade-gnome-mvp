@@ -8,13 +8,16 @@ import { PortfolioChart } from "./dashboard/PortfolioChart";
 import { ExchangeSetup } from "./dashboard/ExchangeSetup";
 import { MarketContext } from "./dashboard/MarketContext";
 import { BotLogs } from "./dashboard/BotLogs";
+import { BacktestResults } from "./dashboard/BacktestResults";
 import { Button } from "./ui/button";
-import { LogOut } from "lucide-react";
+import { LogOut, PlayCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 export const Dashboard = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [backtestMetrics, setBacktestMetrics] = useState<any>(null);
+  const [isRunningBacktest, setIsRunningBacktest] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,6 +40,35 @@ export const Dashboard = () => {
     navigate("/auth");
   };
 
+  const handleRunBacktest = async () => {
+    if (!user) return;
+    
+    setIsRunningBacktest(true);
+    toast.info("Starting backtest simulation...");
+
+    try {
+      const { data, error } = await supabase.functions.invoke('backtest', {
+        body: {
+          tradingPair: 'BTCUSDT',
+          interval: '1h',
+          limit: 1000,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        setBacktestMetrics(data.metrics);
+        toast.success(`Backtest complete! ${data.trades} trades simulated`);
+      }
+    } catch (error) {
+      console.error('Backtest error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to run backtest');
+    } finally {
+      setIsRunningBacktest(false);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -51,10 +83,21 @@ export const Dashboard = () => {
               Automated trading with moving average crossover strategy
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRunBacktest}
+              disabled={isRunningBacktest}
+            >
+              <PlayCircle className="w-4 h-4 mr-2" />
+              {isRunningBacktest ? "Running..." : "Run Backtest"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -67,6 +110,8 @@ export const Dashboard = () => {
           <StrategyConfig userId={user.id} />
           <PortfolioChart userId={user.id} />
         </div>
+
+        <BacktestResults metrics={backtestMetrics} />
 
         <TradeHistory userId={user.id} />
 

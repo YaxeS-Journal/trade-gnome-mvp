@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      backtest_runs: {
+        Row: {
+          avg_pnl: number
+          config_snapshot: Json | null
+          created_at: string
+          id: string
+          max_drawdown: number
+          strategy_type: string
+          total_pnl: number
+          total_trades: number
+          trading_pair: string
+          user_id: string
+          win_rate: number
+        }
+        Insert: {
+          avg_pnl?: number
+          config_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          max_drawdown?: number
+          strategy_type?: string
+          total_pnl?: number
+          total_trades?: number
+          trading_pair: string
+          user_id: string
+          win_rate?: number
+        }
+        Update: {
+          avg_pnl?: number
+          config_snapshot?: Json | null
+          created_at?: string
+          id?: string
+          max_drawdown?: number
+          strategy_type?: string
+          total_pnl?: number
+          total_trades?: number
+          trading_pair?: string
+          user_id?: string
+          win_rate?: number
+        }
+        Relationships: []
+      }
       bot_config: {
         Row: {
           created_at: string
