@@ -65,6 +65,39 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_logs: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          level: string
+          message: string
+          metadata: Json | null
+          timestamp: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          level: string
+          message: string
+          metadata?: Json | null
+          timestamp?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          level?: string
+          message?: string
+          metadata?: Json | null
+          timestamp?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       market_context: {
         Row: {
           adx: number | null

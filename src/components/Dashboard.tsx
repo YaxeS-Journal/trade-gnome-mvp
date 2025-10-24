@@ -7,6 +7,7 @@ import { TradeHistory } from "./dashboard/TradeHistory";
 import { PortfolioChart } from "./dashboard/PortfolioChart";
 import { ExchangeSetup } from "./dashboard/ExchangeSetup";
 import { MarketContext } from "./dashboard/MarketContext";
+import { BotLogs } from "./dashboard/BotLogs";
 import { Button } from "./ui/button";
 import { LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -68,6 +69,8 @@ export const Dashboard = () => {
         </div>
 
         <TradeHistory userId={user.id} />
+
+        <BotLogs userId={user.id} />
       </div>
     </div>
   );

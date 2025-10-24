@@ -222,6 +222,20 @@ serve(async (req) => {
     const trendStrength = rsi;
     const regime = determineRegime(trendStrength, volatility);
 
+    // Helper function to log events
+    const logEvent = async (level: string, eventType: string, message: string, metadata?: any) => {
+      await supabase.from('bot_logs').insert({
+        user_id: user.id,
+        level,
+        event_type: eventType,
+        message,
+        metadata
+      });
+    };
+
+    // Log engine start
+    await logEvent('info', 'engine_start', `Trading engine started for ${config.trading_pair}`);
+
     // Store market context
     const { error: contextError } = await supabase
       .from('market_context')
@@ -246,6 +260,7 @@ serve(async (req) => {
 
     if (contextError) {
       console.error('Error storing market context:', contextError);
+      await logEvent('error', 'context_storage', 'Failed to store market context', { error: contextError.message });
     }
 
     // Trading decision logic
@@ -299,6 +314,13 @@ serve(async (req) => {
       const quantity = config.trade_amount / currentPrice;
       const totalValue = config.trade_amount;
 
+      await logEvent('info', 'trade_signal', `${action.toUpperCase()} signal generated: ${reason}`, {
+        price: currentPrice,
+        quantity,
+        totalValue,
+        indicators: { rsi, macd, volatility, regime }
+      });
+
       const { error: tradeError } = await supabase
         .from('trades')
         .insert({
@@ -314,6 +336,12 @@ serve(async (req) => {
 
       if (tradeError) {
         console.error('Error recording trade:', tradeError);
+        await logEvent('error', 'trade_execution', 'Failed to record trade', { error: tradeError.message });
+      } else {
+        await logEvent('info', 'trade_executed', `${action.toUpperCase()} order executed at $${currentPrice.toFixed(2)}`, {
+          quantity,
+          totalValue
+        });
       }
 
       // Update portfolio history
@@ -352,7 +380,10 @@ serve(async (req) => {
 
       if (portfolioError) {
         console.error('Error updating portfolio:', portfolioError);
+        await logEvent('error', 'portfolio_update', 'Failed to update portfolio', { error: portfolioError.message });
       }
+    } else {
+      await logEvent('info', 'no_action', reason);
     }
 
     return new Response(
