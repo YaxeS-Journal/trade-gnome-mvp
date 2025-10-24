@@ -6,6 +6,7 @@ import { StrategyConfig } from "./dashboard/StrategyConfig";
 import { TradeHistory } from "./dashboard/TradeHistory";
 import { PortfolioChart } from "./dashboard/PortfolioChart";
 import { ExchangeSetup } from "./dashboard/ExchangeSetup";
+import { MarketContext } from "./dashboard/MarketContext";
 import { Button } from "./ui/button";
 import { LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -55,14 +56,16 @@ export const Dashboard = () => {
           </Button>
         </div>
 
-        <ExchangeSetup userId={user.id} />
-
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <BotStatus userId={user.id} />
-          <StrategyConfig userId={user.id} />
+          <MarketContext userId={user.id} />
+          <ExchangeSetup userId={user.id} />
         </div>
 
-        <PortfolioChart userId={user.id} />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <StrategyConfig userId={user.id} />
+          <PortfolioChart userId={user.id} />
+        </div>
 
         <TradeHistory userId={user.id} />
       </div>

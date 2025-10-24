@@ -85,6 +85,22 @@ export const BotStatus = ({ userId }: BotStatusProps) => {
     }
   };
 
+  const runTradingEngine = async () => {
+    try {
+      const { error } = await supabase.functions.invoke('trading-engine');
+      
+      if (error) {
+        console.error('Trading engine error:', error);
+        toast.error('Failed to run trading engine');
+      } else {
+        toast.success('Trading engine executed successfully');
+      }
+    } catch (error: any) {
+      console.error('Trading engine error:', error);
+      toast.error(error.message);
+    }
+  };
+
   const toggleBot = async () => {
     setLoading(true);
     try {
@@ -109,6 +125,11 @@ export const BotStatus = ({ userId }: BotStatusProps) => {
 
       toast.success(`Bot ${!isActive ? "started" : "stopped"} successfully`);
       setIsActive(!isActive);
+
+      // Run trading engine immediately when starting
+      if (!isActive) {
+        runTradingEngine();
+      }
     } catch (error: any) {
       toast.error(error.message);
     } finally {

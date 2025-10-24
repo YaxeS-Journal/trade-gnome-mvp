@@ -65,6 +65,69 @@ export type Database = {
         }
         Relationships: []
       }
+      market_context: {
+        Row: {
+          adx: number | null
+          atr: number | null
+          bb_lower: number | null
+          bb_middle: number | null
+          bb_upper: number | null
+          id: string
+          macd: number | null
+          pair: string
+          recorded_at: string | null
+          regime: string | null
+          resistance_level: number | null
+          rsi: number | null
+          sentiment: number | null
+          signal: number | null
+          support_level: number | null
+          trend_strength: number | null
+          user_id: string
+          volatility: number | null
+        }
+        Insert: {
+          adx?: number | null
+          atr?: number | null
+          bb_lower?: number | null
+          bb_middle?: number | null
+          bb_upper?: number | null
+          id?: string
+          macd?: number | null
+          pair: string
+          recorded_at?: string | null
+          regime?: string | null
+          resistance_level?: number | null
+          rsi?: number | null
+          sentiment?: number | null
+          signal?: number | null
+          support_level?: number | null
+          trend_strength?: number | null
+          user_id: string
+          volatility?: number | null
+        }
+        Update: {
+          adx?: number | null
+          atr?: number | null
+          bb_lower?: number | null
+          bb_middle?: number | null
+          bb_upper?: number | null
+          id?: string
+          macd?: number | null
+          pair?: string
+          recorded_at?: string | null
+          regime?: string | null
+          resistance_level?: number | null
+          rsi?: number | null
+          sentiment?: number | null
+          signal?: number | null
+          support_level?: number | null
+          trend_strength?: number | null
+          user_id?: string
+          volatility?: number | null
+        }
+        Relationships: []
+      }
       portfolio_history: {
         Row: {
           available_balance: number
