@@ -263,56 +263,125 @@ serve(async (req) => {
       await logEvent('error', 'context_storage', 'Failed to store market context', { error: contextError.message });
     }
 
-    // Trading decision logic
+    // Check daily loss limit
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const { data: todayTrades } = await supabase
+      .from('trades')
+      .select('pnl')
+      .eq('user_id', user.id)
+      .gte('created_at', today.toISOString());
+    
+    const todayPnL = todayTrades?.reduce((sum, t) => sum + (parseFloat(t.pnl?.toString() || '0')), 0) || 0;
+    
+    if (Math.abs(todayPnL) >= config.max_daily_loss) {
+      await logEvent('warn', 'safety_limit', `Daily loss limit reached: $${Math.abs(todayPnL).toFixed(2)}. Bot paused.`);
+      
+      // Disable bot
+      await supabase
+        .from('bot_config')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          message: 'Daily loss limit reached. Bot automatically paused.',
+          todayPnL 
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Trading decision logic with context-awareness
     let action = 'hold';
     let reason = '';
+    let adjustedTradeAmount = config.trade_amount;
+
+    // Context-aware position sizing
+    if (volatility > 3) {
+      adjustedTradeAmount *= 0.5; // Reduce size in high volatility
+      await logEvent('info', 'risk_adjustment', `High volatility detected (${volatility.toFixed(2)}%). Position size reduced by 50%.`);
+    }
+    
+    if (sentiment < -0.5) {
+      adjustedTradeAmount *= 0.7; // Reduce size in negative sentiment
+      await logEvent('info', 'risk_adjustment', `Negative sentiment detected (${sentiment.toFixed(2)}). Position size reduced by 30%.`);
+    }
 
     // Check safety conditions
-    const volatilityOk = volatility < 5; // Less than 5% volatility
-    const sentimentOk = sentiment >= 0;
+    const volatilityOk = volatility < 8; // Max 8% volatility
+    const trendStrong = adx > 20; // ADX above 20 indicates trend
 
     // Get current position
     const { data: lastTrade } = await supabase
       .from('trades')
-      .select('trade_type, price')
+      .select('trade_type, price, quantity')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     const inPosition = lastTrade?.trade_type === 'buy';
+    
+    // Check stop loss and take profit
+    if (inPosition && lastTrade) {
+      const entryPrice = parseFloat(lastTrade.price.toString());
+      const priceChange = ((currentPrice - entryPrice) / entryPrice) * 100;
+      
+      if (priceChange <= -config.stop_loss_percent) {
+        action = 'sell';
+        reason = `Stop loss triggered: ${priceChange.toFixed(2)}% loss`;
+        await logEvent('warn', 'stop_loss', reason, { entryPrice, currentPrice, priceChange });
+      } else if (priceChange >= config.take_profit_percent) {
+        action = 'sell';
+        reason = `Take profit triggered: ${priceChange.toFixed(2)}% gain`;
+        await logEvent('info', 'take_profit', reason, { entryPrice, currentPrice, priceChange });
+      }
+    }
 
-    if (volatilityOk && sentimentOk) {
-      if (regime === 'bullish' && !inPosition) {
-        if (shortMA > longMA && rsi < 70) {
+    // Strategy signals (only if no stop/TP triggered)
+    if (action === 'hold' && volatilityOk) {
+      if (regime === 'bullish' && !inPosition && trendStrong) {
+        // Bullish regime with strong trend
+        if (shortMA > longMA && rsi < 70 && rsi > 40 && macd > signal) {
           action = 'buy';
-          reason = 'Bullish regime + MA crossover + RSI not overbought';
+          reason = `Strong bullish signal: MA crossover + RSI(${rsi.toFixed(1)}) healthy + MACD bullish + ADX(${adx.toFixed(1)}) trending`;
         }
       } else if (regime === 'bearish' && inPosition) {
-        if (shortMA < longMA && rsi > 30) {
+        // Bearish regime - exit position
+        if (shortMA < longMA || rsi < 40 || macd < signal) {
           action = 'sell';
-          reason = 'Bearish regime + MA crossover + RSI not oversold';
+          reason = `Bearish signal: MA(${shortMA < longMA ? 'bearish cross' : ''}) RSI(${rsi.toFixed(1)}) MACD(${macd < signal ? 'bearish' : ''})`;
         }
-      } else if (regime === 'range') {
-        if (!inPosition && currentPrice <= bb.lower && rsi < 35) {
+      } else if (regime === 'range' && adx < 20) {
+        // Range-bound market - mean reversion
+        if (!inPosition && currentPrice <= bb.lower && rsi < 30) {
           action = 'buy';
-          reason = 'Range-bound mean reversion: price at lower BB';
-        } else if (inPosition && currentPrice >= bb.upper && rsi > 65) {
+          reason = `Range mean reversion: Price at lower BB(${bb.lower.toFixed(2)}) + RSI oversold(${rsi.toFixed(1)})`;
+        } else if (inPosition && (currentPrice >= bb.upper || rsi > 70)) {
           action = 'sell';
-          reason = 'Range-bound mean reversion: price at upper BB';
+          reason = `Range mean reversion exit: Price at upper BB(${bb.upper.toFixed(2)}) or RSI overbought(${rsi.toFixed(1)})`;
         }
-      } else if (inPosition && shortMA < longMA) {
-        action = 'sell';
-        reason = 'Exit signal: MA crossover down';
       }
-    } else {
-      reason = `Safety check failed: volatility=${volatility.toFixed(2)}%, sentiment=${sentiment.toFixed(2)}`;
+      
+      // Additional exit condition for position holders
+      if (inPosition && action === 'hold') {
+        if (shortMA < longMA && rsi < 45) {
+          action = 'sell';
+          reason = 'Protective exit: MA crossover down + weakening momentum';
+        }
+      }
+    } else if (!volatilityOk) {
+      reason = `High volatility detected (${volatility.toFixed(2)}%). Waiting for calmer conditions.`;
+      await logEvent('info', 'volatility_hold', reason);
     }
 
     // Execute trade if action is not hold
     if (action !== 'hold') {
-      const quantity = config.trade_amount / currentPrice;
-      const totalValue = config.trade_amount;
+      const quantity = adjustedTradeAmount / currentPrice;
+      const totalValue = adjustedTradeAmount;
 
       await logEvent('info', 'trade_signal', `${action.toUpperCase()} signal generated: ${reason}`, {
         price: currentPrice,
@@ -320,6 +389,14 @@ serve(async (req) => {
         totalValue,
         indicators: { rsi, macd, volatility, regime }
       });
+
+      // Calculate PnL for sell trades
+      let tradePnL = 0;
+      if (action === 'sell' && lastTrade) {
+        const entryPrice = parseFloat(lastTrade.price.toString());
+        const entryQty = parseFloat(lastTrade.quantity.toString());
+        tradePnL = (currentPrice - entryPrice) * entryQty;
+      }
 
       const { error: tradeError } = await supabase
         .from('trades')
@@ -331,6 +408,7 @@ serve(async (req) => {
           price: currentPrice,
           quantity,
           total_value: totalValue,
+          pnl: tradePnL,
           status: 'executed'
         });
 
@@ -351,7 +429,7 @@ serve(async (req) => {
         .eq('user_id', user.id)
         .order('recorded_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
 
       let newBalance = lastPortfolio?.available_balance || 10000;
       let totalPnL = lastPortfolio?.total_pnl || 0;
@@ -360,18 +438,14 @@ serve(async (req) => {
         newBalance -= totalValue;
       } else {
         newBalance += totalValue;
-        // Calculate PnL if we have entry price
-        if (lastTrade?.price) {
-          const pnl = (currentPrice - parseFloat(lastTrade.price)) * quantity;
-          totalPnL += pnl;
-        }
+        totalPnL += tradePnL;
       }
 
       const { error: portfolioError } = await supabase
         .from('portfolio_history')
         .insert({
           user_id: user.id,
-          total_value: newBalance,
+          total_value: newBalance + (action === 'buy' ? totalValue : 0),
           available_balance: newBalance,
           in_position: action === 'buy',
           current_position_value: action === 'buy' ? totalValue : 0,
